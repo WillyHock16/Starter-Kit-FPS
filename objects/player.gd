@@ -1,5 +1,9 @@
 extends CharacterBody3D
 
+@export var sync_rate := 0.05  # envía 20 veces/seg.
+
+var _time_since_last_sync := 0.0
+
 @export_subgroup("Properties")
 @export var movement_speed = 5
 @export var jump_strength = 8
@@ -53,6 +57,13 @@ func _ready():
 	initiate_change_weapon(weapon_index)
 
 func _physics_process(delta):
+	
+	# Position
+	if Network.is_server and multiplayer.is_server():
+		_time_since_last_sync += delta
+		if _time_since_last_sync >= sync_rate:
+			_time_since_last_sync = 0.0
+			_sync_state.rpc(global_transform) # manda la pose a todos
 	
 	# Handle functions
 	
@@ -294,3 +305,11 @@ func damage(amount):
 	
 	if health < 0:
 		get_tree().reload_current_scene() # Reset when out of health
+
+@rpc("any_peer")
+func _sync_state(server_transform: Transform3D) -> void:
+	if not Network.is_server:
+		# En cliente: interpola para suavizar
+		var t := 0.1 # factor 0 = salto instantáneo, 1 = sin mezcla
+		global_transform.origin = global_transform.origin.lerp(server_transform.origin, t)
+		global_transform.basis = global_transform.basis.slerp(server_transform.basis, t)
